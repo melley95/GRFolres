@@ -71,6 +71,9 @@ class CubicHorndeski
         data_t phi; // the scalar field
         data_t Pi;  // conjugate momentum of the scalar field
 
+        data_t phi2;
+        data_t Pi2;
+
         /// Defines the mapping between members of Vars and Chombo grid
         /// variables (enum in User_Variables)
         template <typename mapping_function_t>
@@ -78,6 +81,9 @@ class CubicHorndeski
         {
             VarsTools::define_enum_mapping(mapping_function, c_phi, phi);
             VarsTools::define_enum_mapping(mapping_function, c_Pi, Pi);
+
+            VarsTools::define_enum_mapping(mapping_function, c_phi2, phi2);
+            VarsTools::define_enum_mapping(mapping_function, c_Pi2, Pi2);
         }
     };
 
@@ -85,12 +91,15 @@ class CubicHorndeski
     {
         data_t phi;
 
+        data_t phi2;
+
         /// Defines the mapping between members of Vars and Chombo grid
         ///  variables (enum in User_Variables)
         template <typename mapping_function_t>
         void enum_mapping(mapping_function_t mapping_function)
         {
             VarsTools::define_enum_mapping(mapping_function, c_phi, phi);
+            VarsTools::define_enum_mapping(mapping_function, c_phi2, phi2);
         }
     };
 

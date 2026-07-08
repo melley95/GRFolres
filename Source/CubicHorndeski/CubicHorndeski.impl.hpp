@@ -46,6 +46,13 @@ RhoAndSi<data_t> CubicHorndeski<coupling_and_potential_t>::compute_rho_and_Si(
               quantities.dg2_dX * vars.Pi * vars.Pi - quantities.g2 + Xplus +
               quantities.V;
 
+    // rho for collapsing field
+    // Useful quantity Vt
+    data_t Vt =  -vars.Pi2 * vars.Pi2;
+    FOR(i, j) { Vt += vars.chi * h_UU[i][j] * (d1.phi2[i] * d1.phi2[j]); }
+
+    out.rho += vars.Pi2 * vars.Pi2 + 0.5 * Vt;
+
     // S_i (note lower index) = - n^a T_ai
     FOR(i)
     {
@@ -56,6 +63,8 @@ RhoAndSi<data_t> CubicHorndeski<coupling_and_potential_t>::compute_rho_and_Si(
                          vars.Pi * quantities.tau_ij_dot_dphi[i]) -
                     vars.Pi * d1.phi[i] *
                         (1. + quantities.dg2_dX + 2. * quantities.dg3_dphi);
+
+        out.Si[i] += - d1.phi2[i] * vars.Pi2;
     }
 
     return out;
@@ -92,6 +101,8 @@ CubicHorndeski<coupling_and_potential_t>::compute_Sij_TF_and_S(
     // compute potential and add contributions to EM Tensor
     const data_t chi_regularised = simd_max(vars.chi, 1e-6);
 
+    data_t Vt =  -vars.Pi2 * vars.Pi2;
+
     FOR(i, j)
     {
         out.Sij_TF[i][j] =
@@ -111,6 +122,10 @@ CubicHorndeski<coupling_and_potential_t>::compute_Sij_TF_and_S(
             vars.h[i][j] / chi_regularised *
                 (X + quantities.g2 - quantities.V +
                  2. * X * quantities.dg3_dphi);
+
+
+         // Collapse field contribution        
+        out.Sij_TF[i][j] +=-0.5 * vars.h[i][j] * Vt / chi_regularised + d1.phi2[i] * d1.phi2[j];
     }
 
     out.S = vars.chi * TensorAlgebra::compute_trace(out.Sij_TF, h_UU);
@@ -149,6 +164,23 @@ void CubicHorndeski<coupling_and_potential_t>::add_theory_rhs(
     // adjust RHS for the potential term
     total_rhs.phi = advec.phi + vars.lapse * vars.Pi;
     total_rhs.Pi = advec.Pi + lie_deriv_Pi_times_lapse;
+
+    total_rhs.phi2 = advec.phi2 + vars.lapse * vars.Pi2;
+    total_rhs.Pi2 = vars.lapse * vars.K * vars.Pi2 + advec.Pi2;
+
+    FOR(i, j)
+    {
+        // includes non conformal parts of chris not included in chris_ULL
+        total_rhs.Pi2 += h_UU[i][j] * (-0.5 * d1.chi[j] * vars.lapse * d1.phi2[i] +
+                                vars.chi * vars.lapse * d2.phi2[i][j] +
+                                vars.chi * d1.lapse[i] * d1.phi2[j]);
+        FOR(k)
+        {
+        total_rhs.Pi2 += -vars.chi * vars.lapse * h_UU[i][j] * chris.ULL[k][i][j] *
+                      d1.phi2[k];
+        }
+    }
+
 }
 
 template <class coupling_and_potential_t>
