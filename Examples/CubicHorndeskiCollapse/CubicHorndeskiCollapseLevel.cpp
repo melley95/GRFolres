@@ -26,6 +26,7 @@
 #include "WeylExtraction.hpp"
 #include "KerrBH.hpp"
 #include "GammaCalculator.hpp"
+#include "CustomExtraction.hpp"
 
 // Things to do during the advance step after RK4 steps
 void CubicHorndeskiCollapseLevel::specificAdvance()
@@ -163,6 +164,10 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
             }
             constraints_file.write_time_data_line({L2_Ham, L2_Mom});
         }
+
+
+
+
     }
 
     // do puncture tracking on requested level
@@ -203,6 +208,57 @@ void CubicHorndeskiCollapseLevel::prePlotLevel()
             cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham, 
             Interval(c_Mom1, c_Mom3)), 
         m_state_new, m_state_diagnostics, EXCLUDE_GHOST_CELLS);
+
+
+     // Use AMR Interpolator and do lineout data extraction
+            // set up an interpolator
+            // pass the boundary params so that we can use symmetries if
+            // applicable
+            AMRInterpolator<Lagrange<4>> interpolator(
+                m_bh_amr, m_p.origin, m_p.dx, m_p.boundary_params,
+                m_p.verbosity);
+
+            // this should fill all ghosts including the boundary ones according
+            // to the conditions set in params.txt
+            interpolator.refresh();
+
+            // set up the query and execute it
+            std::array<double, CH_SPACEDIM> extraction_origin = {
+                0., 0., 0.}; // specified point {x \in [0,L],y \in
+                                           // [0,L], z \in [0,L]}
+
+
+     // Ham lineout
+    CustomExtraction Ham_extraction(c_Ham, m_p.lineout_num_points,
+        m_p.L, extraction_origin, m_dt,
+        m_time);
+    Ham_extraction.execute_query(&interpolator,
+     m_p.data_path + "Ham_lineout");
+
+          // Ham abs lineout
+    CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
+        m_p.L, extraction_origin, m_dt,
+        m_time);
+    Ham_abs_extraction.execute_query(&interpolator,
+     m_p.data_path + "Ham_abs_lineout");
+
+
+     // Mom lineout
+    CustomExtraction Mom_extraction(c_Mom1, m_p.lineout_num_points,
+        m_p.L, extraction_origin, m_dt,
+        m_time);
+    Mom_extraction.execute_query(&interpolator,
+     m_p.data_path + "Mom_lineout");
+
+    // Mom abs lineout
+    CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
+        m_p.L, extraction_origin, m_dt,
+        m_time);
+    Mom_abs_extraction.execute_query(&interpolator,
+     m_p.data_path + "Mom_abs_lineout");
+
+
+    
     
 }
 #endif /* CH_USE_HDF5 */

@@ -58,6 +58,9 @@ class SimulationParameters : public ModifiedGravitySimulationParametersBase<
         pp.load("kerr_spin", kerr_params.spin);
         pp.load("kerr_center", kerr_params.center, center);
 
+        // Lineout params
+        pp.load("lineout_num_points", lineout_num_points, 10);
+
 #ifdef USE_AHFINDER
         pp.load("AH_initial_guess", AH_initial_guess, 0.5 * kerr_params.mass);
 #endif
@@ -90,6 +93,8 @@ class SimulationParameters : public ModifiedGravitySimulationParametersBase<
     InitialScalarData::params_t initial_params;
     CouplingAndPotential::params_t coupling_and_potential_params;
     KerrBH::params_t kerr_params;
+
+    int lineout_num_points;
 
 #ifdef USE_AHFINDER
     double AH_initial_guess;

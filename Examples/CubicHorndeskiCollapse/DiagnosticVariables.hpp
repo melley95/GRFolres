@@ -23,6 +23,10 @@ enum
     c_rho_g3,
     c_rho_GB,
 
+    c_Ham_abs_sum,
+
+    c_Mom_abs_sum,
+
 
 
 
@@ -41,6 +45,11 @@ static const std::array<std::string, NUM_DIAGNOSTIC_VARS> variable_names = {
     "rho_phi",  "rho_g2",   "rho_g3",
     "rho_GB",
 
+    "Ham_abs_sum",
+
+    "Mom_abs_sum",
+
+  
   
 
 };
