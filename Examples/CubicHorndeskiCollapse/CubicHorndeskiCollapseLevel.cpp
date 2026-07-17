@@ -27,6 +27,7 @@
 #include "KerrBH.hpp"
 #include "GammaCalculator.hpp"
 #include "CustomExtraction.hpp"
+#include "CustomExtractionEvolution.hpp"
 
 // Things to do during the advance step after RK4 steps
 void CubicHorndeskiCollapseLevel::specificAdvance()
@@ -62,6 +63,125 @@ void CubicHorndeskiCollapseLevel::initialData()
                    EXCLUDE_GHOST_CELLS);
 
 }
+
+
+void CubicHorndeskiCollapseLevel::postRestart()
+{
+    if (m_time == 0.0)
+    {
+        fillAllGhosts();
+        CouplingAndPotential coupling_and_potential(
+            m_p.coupling_and_potential_params);
+        CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
+            coupling_and_potential);
+        ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
+            constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
+                        Interval(c_Mom1, c_Mom3));
+        RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
+            cubic_horndeski, m_dx, m_p.center);
+        auto compute_pack =
+            make_compute_pack(constraints, rho_diagnostics);
+        BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
+                       EXCLUDE_GHOST_CELLS);
+
+
+        // AMRReductions for diagnostic variables
+       // AMRReductions<VariableType::diagnostic> amr_reductions(m_gr_amr);
+      //  double L2_Ham = amr_reductions.norm(c_Ham);
+       // double L2_Mom = amr_reductions.norm(Interval(c_Mom1, c_Mom3));
+       // double M_tot = amr_reductions.sum(c_rho_tot_vol);
+
+        // restart works from level 0 to highest level, so want this to happen
+        // last on finest level
+        int write_out_level = m_p.max_level;
+        if (m_level == write_out_level)
+        {
+            // AMRReductions for diagnostic variables
+            AMRReductions<VariableType::diagnostic> amr_reductions(m_gr_amr);
+            double L2_Ham = amr_reductions.norm(c_Ham);
+            double L2_Mom = amr_reductions.norm(Interval(c_Mom1, c_Mom3));
+            double M_tot = amr_reductions.sum(c_rho_tot_vol);
+
+            bool first_step = 1;
+            // Write output file
+            SmallDataIO data_out_file(m_p.data_path + "data_out", m_dt, m_time,
+                m_restart_time, SmallDataIO::APPEND,
+                first_step);
+            data_out_file.remove_duplicate_time_data();
+     //       if (first_step)
+      //      {
+            data_out_file.write_header_line({"L^2_Ham", "L^2_Mom", "M_total"});
+       //     }
+            data_out_file.write_time_data_line({L2_Ham, L2_Mom, M_tot});
+
+
+            // Use AMR Interpolator and do lineout data extraction
+        // pass the boundary params so that we can use symmetries
+         AMRInterpolator<Lagrange<4>> interpolator(m_gr_amr, m_p.origin,
+            m_p.dx, m_p.boundary_params,
+            m_p.verbosity);
+
+        // this should fill all ghosts including the boundary ones according
+        // to the conditions set in params.txt
+            interpolator.refresh();
+
+             // set up the query and execute it
+             std::array<double, CH_SPACEDIM> extraction_origin = {
+                0., 0., 0.}; // specified point {x \in [0,L],y \in
+                                           // [0,L], z \in [0,L]}
+
+
+             // Ham lineout
+            CustomExtraction Ham_extraction(c_Ham, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Ham_extraction.execute_query(&interpolator,
+            m_p.data_path + "Ham_lineout");
+
+            // Ham abs lineout
+            CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Ham_abs_extraction.execute_query(&interpolator,
+            m_p.data_path + "Ham_abs_lineout");
+
+
+            // Mom lineout
+            CustomExtraction Mom_extraction(c_Mom1, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Mom_extraction.execute_query(&interpolator,
+            m_p.data_path + "Mom_lineout");
+
+            // Mom abs lineout
+            CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Mom_abs_extraction.execute_query(&interpolator,
+            m_p.data_path + "Mom_abs_lineout");
+
+             // phi2 lineout
+            CustomExtractionEvolution phi2_extraction(c_phi2, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            phi2_extraction.execute_query(&interpolator,
+            m_p.data_path + "phi2_lineout");
+
+            // Pi2 lineoutbu
+            CustomExtractionEvolution Pi2_extraction(c_Pi2, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Pi2_extraction.execute_query(&interpolator,
+            m_p.data_path + "Pi2_lineout");
+     
+        }
+
+
+
+    }
+
+}
+
 
 // Calculate RHS during RK4 substeps
 void CubicHorndeskiCollapseLevel::specificEvalRHS(GRLevelData &a_soln,
@@ -129,46 +249,119 @@ void CubicHorndeskiCollapseLevel::computeTaggingCriterion(
 
 void CubicHorndeskiCollapseLevel::specificPostTimeStep()
 {
-    CH_TIME("CubicHorndeskiCollapseLevel::specificPostTimeStep");
+    int min_level = 0;
+    bool calculate_diagnostics = at_level_timestep_multiple(min_level);
+    bool first_step = (m_time == 0.);
 
-    bool first_step =
-        (m_time == 0.); // this form is used when 'specificPostTimeStep' was
-                        // called during setup at t=0 from Main
-    // bool first_step = (m_time == m_dt); // if not called in Main
+     // No need to evaluate the diagnostics more frequently than every coarse
+    // timestep, but must happen on every level (not just level zero or data
+    // will not be populated on finer levels)
 
-
-    if (m_p.calculate_constraint_norms)
+    if (calculate_diagnostics)
     {
+        fillAllGhosts();
         CouplingAndPotential coupling_and_potential(
             m_p.coupling_and_potential_params);
         CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
             coupling_and_potential);
-        fillAllGhosts();
-        BoxLoops::loop(
-            ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>(
-                cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
-                Interval(c_Mom1, c_Mom3)),
-            m_state_new, m_state_diagnostics, EXCLUDE_GHOST_CELLS);
-        if (m_level == 0)
+        ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
+            constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
+                        Interval(c_Mom1, c_Mom3));
+        RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
+            cubic_horndeski, m_dx, m_p.center);
+        auto compute_pack =
+            make_compute_pack(constraints, rho_diagnostics);
+        BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
+                       EXCLUDE_GHOST_CELLS);
+
+
+        if (m_level == min_level)
         {
+            // AMRReductions for diagnostic variables
             AMRReductions<VariableType::diagnostic> amr_reductions(m_gr_amr);
             double L2_Ham = amr_reductions.norm(c_Ham);
             double L2_Mom = amr_reductions.norm(Interval(c_Mom1, c_Mom3));
-            SmallDataIO constraints_file(m_p.data_path + "constraint_norms",
-                                         m_dt, m_time, m_restart_time,
-                                         SmallDataIO::APPEND, first_step);
-            constraints_file.remove_duplicate_time_data();
-            if (first_step)
-            {
-                constraints_file.write_header_line({"L^2_Ham", "L^2_Mom"});
+            double M_tot = amr_reductions.sum(c_rho_tot_vol);
+
+
+            // Write output file
+            SmallDataIO data_out_file(m_p.data_path + "data_out", m_dt, m_time,
+                m_restart_time, SmallDataIO::APPEND,
+                first_step);
+            data_out_file.remove_duplicate_time_data();
+     //       if (first_step)
+      //      {
+       //     data_out_file.write_header_line({"L^2_Ham", "L^2_Mom", "M_total"});
+        //    }
+            data_out_file.write_time_data_line({L2_Ham, L2_Mom, M_tot});
+
+
+
+            // Use AMR Interpolator and do lineout data extraction
+            // set up an interpolator
+            // pass the boundary params so that we can use symmetries if
+            // applicable
+            AMRInterpolator<Lagrange<4>> interpolator(
+                m_gr_amr, m_p.origin, m_p.dx, m_p.boundary_params,
+                m_p.verbosity);
+
+            // this should fill all ghosts including the boundary ones according
+            // to the conditions set in params.txt
+            interpolator.refresh();
+
+            // set up the query and execute it
+            std::array<double, CH_SPACEDIM> extraction_origin = {
+                0., 0., 0.}; // specified point {x \in [0,L],y \in
+                                           // [0,L], z \in [0,L]}
+
+
+             // Ham lineout
+            CustomExtraction Ham_extraction(c_Ham, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Ham_extraction.execute_query(&interpolator,
+            m_p.data_path + "Ham_lineout");
+
+            // Ham abs lineout
+            CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Ham_abs_extraction.execute_query(&interpolator,
+            m_p.data_path + "Ham_abs_lineout");
+
+
+            // Mom lineout
+            CustomExtraction Mom_extraction(c_Mom1, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Mom_extraction.execute_query(&interpolator,
+            m_p.data_path + "Mom_lineout");
+
+            // Mom abs lineout
+            CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
+            m_p.L, extraction_origin, m_dt,
+            m_time);
+            Mom_abs_extraction.execute_query(&interpolator,
+            m_p.data_path + "Mom_abs_lineout");
+
+
+             // phi2 lineout
+             CustomExtractionEvolution phi2_extraction(c_phi2, m_p.lineout_num_points,
+                m_p.L, extraction_origin, m_dt,
+                m_time);
+                phi2_extraction.execute_query(&interpolator,
+                m_p.data_path + "phi2_lineout");
+    
+            // Pi2 lineoutbu
+            CustomExtractionEvolution Pi2_extraction(c_Pi2, m_p.lineout_num_points,
+                m_p.L, extraction_origin, m_dt,
+                m_time);
+                Pi2_extraction.execute_query(&interpolator,
+                m_p.data_path + "Pi2_lineout");
+     
             }
-            constraints_file.write_time_data_line({L2_Ham, L2_Mom});
-        }
-
-
-
-
     }
+
 
     // do puncture tracking on requested level
     //if (m_p.track_punctures && m_level == m_p.puncture_tracking_level)
@@ -202,63 +395,17 @@ void CubicHorndeskiCollapseLevel::prePlotLevel()
         m_p.coupling_and_potential_params);
     CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
         coupling_and_potential);
-    fillAllGhosts();
-    BoxLoops::loop(
-        ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>(
-            cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham, 
-            Interval(c_Mom1, c_Mom3)), 
-        m_state_new, m_state_diagnostics, EXCLUDE_GHOST_CELLS);
-
-
-     // Use AMR Interpolator and do lineout data extraction
-            // set up an interpolator
-            // pass the boundary params so that we can use symmetries if
-            // applicable
-            AMRInterpolator<Lagrange<4>> interpolator(
-                m_bh_amr, m_p.origin, m_p.dx, m_p.boundary_params,
-                m_p.verbosity);
-
-            // this should fill all ghosts including the boundary ones according
-            // to the conditions set in params.txt
-            interpolator.refresh();
-
-            // set up the query and execute it
-            std::array<double, CH_SPACEDIM> extraction_origin = {
-                0., 0., 0.}; // specified point {x \in [0,L],y \in
-                                           // [0,L], z \in [0,L]}
-
-
-     // Ham lineout
-    CustomExtraction Ham_extraction(c_Ham, m_p.lineout_num_points,
-        m_p.L, extraction_origin, m_dt,
-        m_time);
-    Ham_extraction.execute_query(&interpolator,
-     m_p.data_path + "Ham_lineout");
-
-          // Ham abs lineout
-    CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
-        m_p.L, extraction_origin, m_dt,
-        m_time);
-    Ham_abs_extraction.execute_query(&interpolator,
-     m_p.data_path + "Ham_abs_lineout");
-
-
-     // Mom lineout
-    CustomExtraction Mom_extraction(c_Mom1, m_p.lineout_num_points,
-        m_p.L, extraction_origin, m_dt,
-        m_time);
-    Mom_extraction.execute_query(&interpolator,
-     m_p.data_path + "Mom_lineout");
-
-    // Mom abs lineout
-    CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
-        m_p.L, extraction_origin, m_dt,
-        m_time);
-    Mom_abs_extraction.execute_query(&interpolator,
-     m_p.data_path + "Mom_abs_lineout");
-
-
-    
-    
+    ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
+        constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
+                    Interval(c_Mom1, c_Mom3));
+   // ModifiedPunctureGauge modified_puncture_gauge(m_p.modified_ccz4_params);
+    // CCZ4 is required since this code only works in this formulation
+    RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
+        cubic_horndeski, m_dx, m_p.center);
+    auto compute_pack =
+        make_compute_pack(constraints, rho_diagnostics);
+    BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
+                   EXCLUDE_GHOST_CELLS);
+   
 }
 #endif /* CH_USE_HDF5 */

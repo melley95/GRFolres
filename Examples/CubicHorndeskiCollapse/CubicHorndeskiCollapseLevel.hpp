@@ -33,6 +33,9 @@ class CubicHorndeskiCollapseLevel : public GRAMRLevel
     /// Initial data calculation
     virtual void initialData() override;
 
+    // Calculate diagnostics on ID
+    virtual void postRestart() override;
+
     /// Calculation of the right hand side for the time stepping
     virtual void specificEvalRHS(GRLevelData &a_soln, GRLevelData &a_rhs,
                                  const double a_time) override;

@@ -388,9 +388,11 @@ AllRhos<data_t> CubicHorndeski<coupling_and_potential_t>::compute_all_rhos(
 
     // dphi_dot_dphi - not conformal
     data_t dphi_dot_dphi = 0.;
+    data_t dphi2_dot_dphi2 = 0.;
     FOR(i, j)
     {
         dphi_dot_dphi += vars.chi * h_UU[i][j] * d1.phi[i] * d1.phi[j];
+        dphi2_dot_dphi2 += vars.chi * h_UU[i][j] * d1.phi2[i] * d1.phi2[j];
     }
 
     // kinetic contribution to the energy density
@@ -398,6 +400,8 @@ AllRhos<data_t> CubicHorndeski<coupling_and_potential_t>::compute_all_rhos(
 
     // rho = n^a n^b T_ab
     out.phi = Xplus + quantities.V;
+
+    out.phi2 = 0.5 * (vars.Pi2 * vars.Pi2 + dphi2_dot_dphi2);
 
     // Horndeski contribution
     out.g2 = quantities.dg2_dX * vars.Pi * vars.Pi - quantities.g2;

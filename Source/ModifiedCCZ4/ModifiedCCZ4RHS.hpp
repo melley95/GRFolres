@@ -59,6 +59,9 @@ template <class data_t> struct AllRhos
     data_t g2;
     data_t g3;
     data_t GB;
+    data_t phi2;
+    data_t tot;
+    data_t tot_vol;
 };
 
 template <class theory_t, class gauge_t = ModifiedPunctureGauge,

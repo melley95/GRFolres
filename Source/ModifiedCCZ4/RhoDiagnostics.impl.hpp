@@ -33,11 +33,24 @@ void RhoDiagnostics<theory_t>::compute(Cell<data_t> current_cell) const
     // Compute diagnostics
     AllRhos<data_t> all_rhos = my_theory.compute_all_rhos(vars, d1, d2, coords);
 
+    all_rhos.tot = all_rhos.phi + all_rhos.g2 + all_rhos.g3 + all_rhos.GB + all_rhos.phi2;
+
+
+    data_t det_gamma = TensorAlgebra::compute_determinant(vars.h);
+    all_rhos.tot_vol = all_rhos.tot * pow(vars.chi, -3.0/2.0);
+
     // Write the constraints into the output FArrayBox
     current_cell.store_vars(all_rhos.phi, c_rho_phi);
     current_cell.store_vars(all_rhos.g2, c_rho_g2);
     current_cell.store_vars(all_rhos.g3, c_rho_g3);
     current_cell.store_vars(all_rhos.GB, c_rho_GB);
+
+    current_cell.store_vars(all_rhos.phi2, c_rho_phi2);
+
+    current_cell.store_vars(all_rhos.tot, c_rho_tot);
+    current_cell.store_vars(all_rhos.tot_vol, c_rho_tot_vol);
+
+    
 }
 
 #endif /* RHODIAGNOSTICS_IMPL_HPP_ */
