@@ -61,6 +61,11 @@ class SimulationParameters : public ModifiedGravitySimulationParametersBase<
         // Lineout params
         pp.load("lineout_num_points", lineout_num_points, 10);
 
+        pp.load("theshold_chi", threshold_chi, 0.0);
+        pp.load("theshold_phi", threshold_phi, 0.0);
+
+        pp.load("do_lineouts", do_lineouts, false);
+
 #ifdef USE_AHFINDER
         pp.load("AH_initial_guess", AH_initial_guess, 0.5 * kerr_params.mass);
 #endif
@@ -87,6 +92,8 @@ class SimulationParameters : public ModifiedGravitySimulationParametersBase<
 
     bool calculate_constraint_norms;
 
+    bool do_lineouts;
+
 
     // Collection of parameters necessary for initial conditions
     double G_Newton;
@@ -95,6 +102,10 @@ class SimulationParameters : public ModifiedGravitySimulationParametersBase<
     KerrBH::params_t kerr_params;
 
     int lineout_num_points;
+
+    double threshold_chi;
+    double threshold_phi;
+
 
 #ifdef USE_AHFINDER
     double AH_initial_guess;

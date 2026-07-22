@@ -53,7 +53,7 @@ class InitialScalarData
         current_cell.store_vars(0.0, c_Pi);
 
         current_cell.store_vars(phi, c_phi2);
-        current_cell.store_vars(0.0, c_Pi2);
+        current_cell.store_vars(phi, c_Pi2);
     }
 
   protected:

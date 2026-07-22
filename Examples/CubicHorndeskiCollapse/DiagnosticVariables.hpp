@@ -26,9 +26,16 @@ enum
     c_rho_tot,
     c_rho_tot_vol,
 
-    c_Ham_abs_sum,
+    c_Madm,
+    c_Jadm,
 
-    c_Mom_abs_sum,
+    c_Ham_abs_terms,
+
+    c_Mom_abs_terms1,
+
+    c_Mom_abs_terms2,
+
+    c_Mom_abs_terms3,
 
 
 
@@ -54,9 +61,19 @@ static const std::array<std::string, NUM_DIAGNOSTIC_VARS> variable_names = {
 
     "rho_tot_vol",
 
-    "Ham_abs_sum",
+    "Madm", "Jadm",
 
-    "Mom_abs_sum",
+    "Ham_abs_terms",
+
+    "Mom_abs_terms1",
+
+    "Mom_abs_terms2",
+
+    "Mom_abs_terms3"
+
+
+
+
 
   
   

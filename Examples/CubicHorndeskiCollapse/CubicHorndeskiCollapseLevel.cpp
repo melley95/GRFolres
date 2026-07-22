@@ -7,7 +7,7 @@
 #include "AMRReductions.hpp"
 // #include "BinaryBH.hpp"
 #include "BoxLoops.hpp"
-#include "ChiExtractionTaggingCriterion.hpp"
+#include "ChiAndPhi2TaggingCriterion.hpp"
 // #include "ChiPunctureExtractionTaggingCriterion.hpp"
 #include "ComputePack.hpp"
 #include "InitialScalarData.hpp"
@@ -28,6 +28,9 @@
 #include "GammaCalculator.hpp"
 #include "CustomExtraction.hpp"
 #include "CustomExtractionEvolution.hpp"
+
+#include "ADMQuantities.hpp"
+#include "ADMQuantitiesExtraction.hpp"
 
 // Things to do during the advance step after RK4 steps
 void CubicHorndeskiCollapseLevel::specificAdvance()
@@ -72,24 +75,35 @@ void CubicHorndeskiCollapseLevel::postRestart()
         fillAllGhosts();
         CouplingAndPotential coupling_and_potential(
             m_p.coupling_and_potential_params);
+       
         CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
             coupling_and_potential);
+       
         ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
             constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
-                        Interval(c_Mom1, c_Mom3));
+                        Interval(c_Mom1, c_Mom3), c_Ham_abs_terms, Interval(c_Mom_abs_terms1, c_Mom_abs_terms3));
+        
         RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
             cubic_horndeski, m_dx, m_p.center);
+
+        ADMQuantities adm_quantities(m_p.extraction_params.center, m_dx,
+            c_Madm, c_Jadm);
+            
         auto compute_pack =
-            make_compute_pack(constraints, rho_diagnostics);
+            make_compute_pack(constraints, rho_diagnostics, adm_quantities);
         BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
                        EXCLUDE_GHOST_CELLS);
 
+    //    int min_level = 0;
+     //   if (m_level == min_level){
+       //     m_gr_amr.m_interpolator->refresh();    
+        //    ADMQuantitiesExtraction my_extraction(
+         //       m_p.extraction_params, m_dt, m_time, m_restart_time, c_Madm,
+           //     c_Jadm);
+          //   my_extraction.execute_query(m_gr_amr.m_interpolator);    
+      //  }
 
-        // AMRReductions for diagnostic variables
-       // AMRReductions<VariableType::diagnostic> amr_reductions(m_gr_amr);
-      //  double L2_Ham = amr_reductions.norm(c_Ham);
-       // double L2_Mom = amr_reductions.norm(Interval(c_Mom1, c_Mom3));
-       // double M_tot = amr_reductions.sum(c_rho_tot_vol);
+
 
         // restart works from level 0 to highest level, so want this to happen
         // last on finest level
@@ -113,6 +127,10 @@ void CubicHorndeskiCollapseLevel::postRestart()
             data_out_file.write_header_line({"L^2_Ham", "L^2_Mom", "M_total"});
        //     }
             data_out_file.write_time_data_line({L2_Ham, L2_Mom, M_tot});
+            
+
+
+            if (m_p.do_lineouts){
 
 
             // Use AMR Interpolator and do lineout data extraction
@@ -139,7 +157,7 @@ void CubicHorndeskiCollapseLevel::postRestart()
             m_p.data_path + "Ham_lineout");
 
             // Ham abs lineout
-            CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
+            CustomExtraction Ham_abs_extraction(c_Ham_abs_terms, m_p.lineout_num_points,
             m_p.L, extraction_origin, m_dt,
             m_time);
             Ham_abs_extraction.execute_query(&interpolator,
@@ -154,7 +172,7 @@ void CubicHorndeskiCollapseLevel::postRestart()
             m_p.data_path + "Mom_lineout");
 
             // Mom abs lineout
-            CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
+            CustomExtraction Mom_abs_extraction(c_Mom_abs_terms1, m_p.lineout_num_points,
             m_p.L, extraction_origin, m_dt,
             m_time);
             Mom_abs_extraction.execute_query(&interpolator,
@@ -173,8 +191,10 @@ void CubicHorndeskiCollapseLevel::postRestart()
             m_time);
             Pi2_extraction.execute_query(&interpolator,
             m_p.data_path + "Pi2_lineout");
-     
+
+            }
         }
+
 
 
 
@@ -234,6 +254,8 @@ void CubicHorndeskiCollapseLevel::preTagCells()
 {
     // We only use chi in the tagging criterion so only fill the ghosts for chi
     fillAllGhosts(VariableType::evolution, Interval(c_chi, c_chi));
+    fillAllGhosts(VariableType::evolution, Interval(c_phi2, c_phi2));
+    fillAllGhosts(VariableType::evolution, Interval(c_Pi2, c_Pi2));
 }
 
 // specify the cells to tag
@@ -241,9 +263,7 @@ void CubicHorndeskiCollapseLevel::computeTaggingCriterion(
     FArrayBox &tagging_criterion, const FArrayBox &current_state)
 {
     
-        BoxLoops::loop(ChiExtractionTaggingCriterion(m_dx, m_level,
-                                                     m_p.extraction_params,
-                                                     m_p.activate_extraction),
+        BoxLoops::loop(ChiAndPhi2TaggingCriterion(m_dx, m_p.threshold_chi, m_p.threshold_phi),
                        current_state, tagging_criterion);
 }
 
@@ -260,17 +280,26 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
     if (calculate_diagnostics)
     {
         fillAllGhosts();
+
         CouplingAndPotential coupling_and_potential(
             m_p.coupling_and_potential_params);
+
         CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
             coupling_and_potential);
-        ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
+
+     ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
             constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
-                        Interval(c_Mom1, c_Mom3));
+                        Interval(c_Mom1, c_Mom3), c_Ham_abs_terms, Interval(c_Mom_abs_terms1, c_Mom_abs_terms3));
+
         RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
             cubic_horndeski, m_dx, m_p.center);
+
+        ADMQuantities adm_quantities(m_p.extraction_params.center, m_dx,
+            c_Madm, c_Jadm);
+
+
         auto compute_pack =
-            make_compute_pack(constraints, rho_diagnostics);
+            make_compute_pack(constraints, rho_diagnostics, adm_quantities);
         BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
                        EXCLUDE_GHOST_CELLS);
 
@@ -297,7 +326,15 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
 
 
 
-            // Use AMR Interpolator and do lineout data extraction
+           m_gr_amr.m_interpolator->refresh();    
+            ADMQuantitiesExtraction my_extraction(
+                m_p.extraction_params, m_dt, m_time, m_restart_time, c_Madm,
+                c_Jadm);
+          my_extraction.execute_query(m_gr_amr.m_interpolator);   
+
+            if (m_p.do_lineouts){
+
+             // Use AMR Interpolator and do lineout data extraction
             // set up an interpolator
             // pass the boundary params so that we can use symmetries if
             // applicable
@@ -308,7 +345,6 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
             // this should fill all ghosts including the boundary ones according
             // to the conditions set in params.txt
             interpolator.refresh();
-
             // set up the query and execute it
             std::array<double, CH_SPACEDIM> extraction_origin = {
                 0., 0., 0.}; // specified point {x \in [0,L],y \in
@@ -323,7 +359,7 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
             m_p.data_path + "Ham_lineout");
 
             // Ham abs lineout
-            CustomExtraction Ham_abs_extraction(c_Ham_abs_sum, m_p.lineout_num_points,
+            CustomExtraction Ham_abs_extraction(c_Ham_abs_terms, m_p.lineout_num_points,
             m_p.L, extraction_origin, m_dt,
             m_time);
             Ham_abs_extraction.execute_query(&interpolator,
@@ -338,7 +374,7 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
             m_p.data_path + "Mom_lineout");
 
             // Mom abs lineout
-            CustomExtraction Mom_abs_extraction(c_Mom_abs_sum, m_p.lineout_num_points,
+            CustomExtraction Mom_abs_extraction(c_Mom_abs_terms1, m_p.lineout_num_points,
             m_p.L, extraction_origin, m_dt,
             m_time);
             Mom_abs_extraction.execute_query(&interpolator,
@@ -358,6 +394,7 @@ void CubicHorndeskiCollapseLevel::specificPostTimeStep()
                 m_time);
                 Pi2_extraction.execute_query(&interpolator,
                 m_p.data_path + "Pi2_lineout");
+            }
      
             }
     }
@@ -393,18 +430,22 @@ void CubicHorndeskiCollapseLevel::prePlotLevel()
 {
     CouplingAndPotential coupling_and_potential(
         m_p.coupling_and_potential_params);
-    CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
+   
+        CubicHorndeskiWithCouplingAndPotential cubic_horndeski(
         coupling_and_potential);
-    ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
-        constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
-                    Interval(c_Mom1, c_Mom3));
+      
+      ModifiedGravityConstraints<CubicHorndeskiWithCouplingAndPotential>
+            constraints(cubic_horndeski, m_dx, m_p.center, m_p.G_Newton, c_Ham,
+                        Interval(c_Mom1, c_Mom3), c_Ham_abs_terms, Interval(c_Mom_abs_terms1, c_Mom_abs_terms3));
    // ModifiedPunctureGauge modified_puncture_gauge(m_p.modified_ccz4_params);
     // CCZ4 is required since this code only works in this formulation
     RhoDiagnostics<CubicHorndeskiWithCouplingAndPotential> rho_diagnostics(
         cubic_horndeski, m_dx, m_p.center);
-    auto compute_pack =
+  
+        auto compute_pack =
         make_compute_pack(constraints, rho_diagnostics);
-    BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
+   
+        BoxLoops::loop(compute_pack, m_state_new, m_state_diagnostics,
                    EXCLUDE_GHOST_CELLS);
    
 }

@@ -69,10 +69,7 @@ void ModifiedGravityConstraints<theory_t>::compute(
 
 
     store_vars(out, current_cell);
-    current_cell.store_vars(out.Ham_abs_terms, c_Ham_abs_sum);
 
-    store_vars(out, current_cell);
-    current_cell.store_vars(out.Mom_abs_terms[0], c_Mom_abs_sum);
 
 
 }
